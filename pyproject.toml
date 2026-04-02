@@ -1,7 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "py-eightctl"
 version = "0.1.0"
-description = "Add your description here"
+description = "Small Python CLI and reusable client for core Eight Sleep controls"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.12.5",
+    "typer>=0.24.1",
+]
+
+[project.scripts]
+py-eightctl = "py_eightctl.cli:main"
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.42.1",
+    "pyinstaller>=6.19.0",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "ruff>=0.15.9",
+]
+
+[tool.poe.tasks]
+typecheck = "pyright"
+lint = "ruff check ."
+format-check = "ruff format --check ."
+format = [
+    { cmd = "ruff check --fix ." },
+    { cmd = "ruff format ." },
+]
+test = "pytest"
+build-onefile = "pyinstaller --clean --noconfirm --onefile --name py-eightctl src/py_eightctl/__main__.py"
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
