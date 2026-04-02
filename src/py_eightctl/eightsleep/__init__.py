@@ -18,7 +18,7 @@ from py_eightctl.eightsleep.models import (
     SmartTemperatureStatus,
     StoredConfig,
 )
-from py_eightctl.eightsleep.service import EightSleepService
+from py_eightctl.eightsleep.service import EightSleepService, TokenRefreshHook
 from py_eightctl.eightsleep.temperature import ParsedTemperature, parse_temperature_input
 
 __all__ = [
@@ -40,5 +40,6 @@ __all__ = [
     "SmartTemperatureStage",
     "SmartTemperatureStatus",
     "StoredConfig",
+    "TokenRefreshHook",
     "parse_temperature_input",
 ]
