@@ -88,7 +88,8 @@ def _print_model(ctx: typer.Context, model: RenderableModel) -> None:
             f"selector={selector} id={model.id} time={model.time} "
             f"enabled={str(model.enabled).lower()} "
             f"state={model.state} next={str(model.next).lower()} "
-            f"one_off={str(model.one_off).lower()}"
+            f"one_off={str(model.one_off).lower()} "
+            f"vibration_test={str(model.is_vibration_test).lower()}"
         )
         return
 
@@ -98,11 +99,14 @@ def _print_alarm_list(alarm_list: AlarmList) -> None:
         typer.echo("no alarms")
         return
 
-    typer.echo("state    time      type      selector         id")
+    typer.echo("state    time      type       selector         id")
     for alarm in alarm_list.alarms:
-        alarm_type = "one-off" if alarm.one_off else "routine"
+        if alarm.is_vibration_test:
+            alarm_type = "vibe-test"
+        else:
+            alarm_type = "one-off" if alarm.one_off else "routine"
         selector = "next" if alarm.next else alarm.fingerprint
-        typer.echo(f"{alarm.state:<8} {alarm.time:<9} {alarm_type:<9} {selector:<16} {alarm.id}")
+        typer.echo(f"{alarm.state:<8} {alarm.time:<9} {alarm_type:<10} {selector:<16} {alarm.id}")
 
 
 def _handle_error(error: EightSleepError) -> None:

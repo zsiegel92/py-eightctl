@@ -256,3 +256,52 @@ def test_alarm_vibration_test_uses_user_endpoint() -> None:
     result = client.alarm_vibration_test(EmptyRequest())
 
     assert result.ok is True
+
+
+def test_list_alarms_marks_vibration_test_alarm() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v2/users/uid-123/routines":
+            return httpx.Response(
+                200,
+                json={
+                    "settings": {
+                        "routines": [],
+                        "oneOffAlarms": [
+                            {
+                                "alarmId": "alarm-test",
+                                "time": "18:33:27",
+                                "enabled": True,
+                                "settings": {
+                                    "vibration": {
+                                        "enabled": True,
+                                        "powerLevel": 100,
+                                        "pattern": "TESTDRIVE",
+                                    },
+                                    "thermal": {"enabled": False, "level": 0},
+                                },
+                                "dismissedUntil": "1970-01-01T00:00:00Z",
+                                "snoozedUntil": "1970-01-01T00:00:00Z",
+                            }
+                        ],
+                    },
+                    "state": {"nextAlarm": {}},
+                },
+            )
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = EightSleepClient(
+        StoredConfig(
+            email="user@example.com",
+            password="secret",
+            user_id="uid-123",
+            token="token",
+            token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    alarms = client.list_alarms(EmptyRequest())
+
+    assert len(alarms.alarms) == 1
+    assert alarms.alarms[0].is_vibration_test is True
+    assert alarms.alarms[0].vibration_pattern == "TESTDRIVE"

@@ -152,6 +152,8 @@ class Alarm(Model):
     time: str
     days_of_week: list[int] = Field(default_factory=list)
     vibration: bool
+    vibration_pattern: str | None = None
+    vibration_power_level: int | None = None
     thermal_enabled: bool = False
     thermal_level: int | None = None
     next: bool = False
@@ -172,11 +174,18 @@ class Alarm(Model):
                 "thermal_level": self.thermal_level,
                 "time": self.time,
                 "vibration": self.vibration,
+                "vibration_pattern": self.vibration_pattern,
+                "vibration_power_level": self.vibration_power_level,
             },
             sort_keys=True,
             separators=(",", ":"),
         )
         return hashlib.blake2s(material.encode("utf-8"), digest_size=8).hexdigest()
+
+    @computed_field
+    @property
+    def is_vibration_test(self) -> bool:
+        return self.vibration_pattern == "TESTDRIVE"
 
 
 class AlarmList(Model):
@@ -198,6 +207,8 @@ class SetAlarmEnabledRequest(Model):
 
 class AlarmVibrationSettings(Model):
     enabled: bool = False
+    power_level: int | None = Field(default=None, alias="powerLevel")
+    pattern: str | None = None
 
 
 class AlarmThermalSettings(Model):

@@ -444,6 +444,8 @@ class EightSleepClient:
             time=time_value,
             days_of_week=days,
             vibration=entry.settings.vibration.enabled,
+            vibration_pattern=entry.settings.vibration.pattern,
+            vibration_power_level=entry.settings.vibration.power_level,
             thermal_enabled=entry.settings.thermal.enabled,
             thermal_level=entry.settings.thermal.level,
             next=next_alarm,
