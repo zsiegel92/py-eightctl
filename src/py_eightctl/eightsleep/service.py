@@ -9,6 +9,7 @@ import httpx
 from py_eightctl.eightsleep.client import EightSleepClient
 from py_eightctl.eightsleep.config import ConfigStore
 from py_eightctl.eightsleep.models import (
+    ActionResult,
     Alarm,
     AlarmList,
     CredentialsInput,
@@ -22,7 +23,15 @@ from py_eightctl.eightsleep.models import (
     StoredConfig,
 )
 
-ResultT = TypeVar("ResultT", StoredConfig, PodStatus, SmartTemperatureStatus, AlarmList, Alarm)
+ResultT = TypeVar(
+    "ResultT",
+    StoredConfig,
+    PodStatus,
+    SmartTemperatureStatus,
+    AlarmList,
+    Alarm,
+    ActionResult,
+)
 TokenRefreshHook = Callable[[], None]
 
 
@@ -68,6 +77,9 @@ class EightSleepService:
 
     def set_alarm_enabled(self, request: SetAlarmEnabledRequest) -> Alarm:
         return self._run(lambda client: client.set_alarm_enabled(request))
+
+    def alarm_vibration_test(self, request: EmptyRequest) -> ActionResult:
+        return self._run(lambda client: client.alarm_vibration_test(request))
 
     def _run(self, action: Callable[[EightSleepClient], ResultT]) -> ResultT:
         config = self.store.load(EmptyRequest())

@@ -232,3 +232,27 @@ def test_refetch_alarm_by_fingerprint_when_id_changes() -> None:
     assert alarm.id == "alarm-2"
     assert alarm.enabled is False
     assert len(alarm.fingerprint) == 16
+
+
+def test_alarm_vibration_test_uses_user_endpoint() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "app-api.8slp.net"
+        if request.url.path == "/v1/users/uid-123/vibration-test":
+            assert request.method == "POST"
+            return httpx.Response(204)
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = EightSleepClient(
+        StoredConfig(
+            email="user@example.com",
+            password="secret",
+            user_id="uid-123",
+            token="token",
+            token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.alarm_vibration_test(EmptyRequest())
+
+    assert result.ok is True

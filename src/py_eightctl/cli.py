@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from py_eightctl.eightsleep import (
+    ActionResult,
     Alarm,
     AlarmList,
     CredentialsInput,
@@ -39,7 +40,7 @@ class CliState:
         self.json_output = json_output
 
 
-RenderableModel = Alarm | AlarmList | PodStatus | SmartTemperatureStatus
+RenderableModel = ActionResult | Alarm | AlarmList | PodStatus | SmartTemperatureStatus
 
 
 def main() -> None:
@@ -58,6 +59,10 @@ def _print_model(ctx: typer.Context, model: RenderableModel) -> None:
 
     if isinstance(model, AlarmList):
         _print_alarm_list(model)
+        return
+
+    if isinstance(model, ActionResult):
+        typer.echo(model.message)
         return
 
     if isinstance(model, SmartTemperatureStatus):
@@ -257,6 +262,15 @@ def alarm_disable(
                 SetAlarmEnabledRequest(selector=selector, enabled=False)
             ),
         )
+    except EightSleepError as error:
+        _handle_error(error)
+
+
+@alarm_app.command("vibration-test")
+def alarm_vibration_test(ctx: typer.Context) -> None:
+    """Run a brief alarm vibration test."""
+    try:
+        _print_model(ctx, _state(ctx).service.alarm_vibration_test(EmptyRequest()))
     except EightSleepError as error:
         _handle_error(error)
 

@@ -22,6 +22,11 @@ class EmptyRequest(Model):
     pass
 
 
+class ActionResult(Model):
+    ok: bool = True
+    message: str
+
+
 class CredentialsInput(Model):
     email: str
     password: str

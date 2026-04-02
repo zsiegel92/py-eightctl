@@ -16,6 +16,7 @@ from py_eightctl.eightsleep.models import (
     DEFAULT_BASE_URL,
     DEFAULT_CLIENT_ID,
     DEFAULT_CLIENT_SECRET,
+    ActionResult,
     Alarm,
     AlarmList,
     AlarmMatch,
@@ -193,6 +194,16 @@ class EightSleepClient:
             f"updated alarm {match.alarm.id}, but could not refetch it via "
             f"fingerprint {match.alarm.fingerprint}"
         )
+
+    def alarm_vibration_test(self, _: EmptyRequest) -> ActionResult:
+        user_id = self._require_user_id()
+        self._request(
+            "POST",
+            f"/v1/users/{user_id}/vibration-test",
+            body={},
+            use_app_base_url=True,
+        )
+        return ActionResult(message="alarm vibration test triggered")
 
     def _fetch_routines_payload(self) -> RoutinesPayload:
         user_id = self._require_user_id()
