@@ -11,14 +11,17 @@ from pydantic import BaseModel
 
 from py_eightctl.eightsleep.errors import ApiError, ConfigurationError, ResponseError
 from py_eightctl.eightsleep.models import (
+    APP_BASE_URL,
+    AUTH_URL,
+    DEFAULT_BASE_URL,
+    DEFAULT_CLIENT_ID,
+    DEFAULT_CLIENT_SECRET,
     Alarm,
     AlarmList,
     AlarmMatch,
     AlarmState,
     CredentialsInput,
     EmptyRequest,
-    LegacyLoginRequest,
-    LegacyLoginResponse,
     PodStatus,
     RoutineAlarmEntry,
     RoutinesPayload,
@@ -173,7 +176,23 @@ class EightSleepClient:
         for alarm in updated.alarms:
             if alarm.id == match.alarm.id:
                 return alarm
-        raise ResponseError(f"updated alarm {match.alarm.id}, but could not refetch it")
+
+        fingerprint_matches = [
+            alarm for alarm in updated.alarms if alarm.fingerprint == match.alarm.fingerprint
+        ]
+        if len(fingerprint_matches) == 1:
+            return fingerprint_matches[0]
+
+        enabled_matches = [
+            alarm for alarm in fingerprint_matches if alarm.enabled == request.enabled
+        ]
+        if len(enabled_matches) == 1:
+            return enabled_matches[0]
+
+        raise ResponseError(
+            f"updated alarm {match.alarm.id}, but could not refetch it via "
+            f"fingerprint {match.alarm.fingerprint}"
+        )
 
     def _fetch_routines_payload(self) -> RoutinesPayload:
         user_id = self._require_user_id()
@@ -250,47 +269,25 @@ class EightSleepClient:
         token_request = TokenAuthRequest(
             username=credentials.email,
             password=credentials.password,
-            client_id=self.config.client_id,
-            client_secret=self.config.client_secret,
+            client_id=DEFAULT_CLIENT_ID,
+            client_secret=DEFAULT_CLIENT_SECRET,
         )
 
-        try:
-            response = self._raw_request(
-                "POST",
-                self.config.auth_url,
-                body=token_request.model_dump(mode="json"),
-                content_type="application/x-www-form-urlencoded",
-                use_form_encoding=True,
-                needs_auth=False,
-            )
-            parsed = TokenAuthResponse.model_validate(response.json())
-            self.config.token = parsed.access_token
-            self.config.token_expires_at = datetime.now(UTC) + timedelta(
-                seconds=max(parsed.expires_in - 60, 0)
-            )
-            if parsed.user_id and not self.config.user_id:
-                self.config.user_id = parsed.user_id
-            return
-        except ApiError:
-            pass
-
-        legacy = LegacyLoginRequest(email=credentials.email, password=credentials.password)
         response = self._raw_request(
             "POST",
-            urljoin(self.config.base_url.rstrip("/") + "/", "login"),
-            body=legacy.model_dump(mode="json"),
+            AUTH_URL,
+            body=token_request.model_dump(mode="json"),
+            content_type="application/x-www-form-urlencoded",
+            use_form_encoding=True,
             needs_auth=False,
         )
-        parsed = LegacyLoginResponse.model_validate(response.json())
-        self.config.token = parsed.session.token
-        if parsed.session.expiration_date:
-            self.config.token_expires_at = datetime.fromisoformat(
-                parsed.session.expiration_date.replace("Z", "+00:00")
-            )
-        else:
-            self.config.token_expires_at = datetime.now(UTC) + timedelta(hours=12)
-        if parsed.session.user_id and not self.config.user_id:
-            self.config.user_id = parsed.session.user_id
+        parsed = TokenAuthResponse.model_validate(response.json())
+        self.config.token = parsed.access_token
+        self.config.token_expires_at = datetime.now(UTC) + timedelta(
+            seconds=max(parsed.expires_in - 60, 0)
+        )
+        if parsed.user_id and not self.config.user_id:
+            self.config.user_id = parsed.user_id
 
     def _request(
         self,
@@ -301,7 +298,7 @@ class EightSleepClient:
         query: dict[str, str] | None = None,
         use_app_base_url: bool = False,
     ) -> httpx.Response:
-        base_url = self.config.app_base_url if use_app_base_url else self.config.base_url
+        base_url = APP_BASE_URL if use_app_base_url else DEFAULT_BASE_URL
         return self._raw_request(
             method,
             urljoin(base_url.rstrip("/") + "/", path.lstrip("/")),
@@ -436,6 +433,8 @@ class EightSleepClient:
             time=time_value,
             days_of_week=days,
             vibration=entry.settings.vibration.enabled,
+            thermal_enabled=entry.settings.thermal.enabled,
+            thermal_level=entry.settings.thermal.level,
             next=next_alarm,
             state=AlarmState.ENABLED,
             dismissed_until=dismissed_until,
@@ -462,10 +461,15 @@ class EightSleepClient:
             if candidate.alarm.id == selector:
                 return candidate
 
+        for candidate in candidates:
+            if candidate.alarm.fingerprint == selector:
+                return candidate
+
         normalized_selector = self._normalize_alarm_time(selector)
         if normalized_selector is None:
             raise ConfigurationError(
-                "selector must be 'next', an exact HH:MM[:SS], or a full alarm id"
+                "selector must be 'next', an exact HH:MM[:SS], a stable fingerprint, "
+                "or a full alarm id"
             )
 
         matches = [

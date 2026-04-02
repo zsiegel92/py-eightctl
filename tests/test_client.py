@@ -179,3 +179,56 @@ def test_disable_one_off_alarm_updates_routines_endpoint() -> None:
 
     assert enabled is False
     assert alarm.enabled is False
+
+
+def test_refetch_alarm_by_fingerprint_when_id_changes() -> None:
+    enabled = True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal enabled
+        if request.url.path == "/v2/users/uid-123/routines" and request.method == "GET":
+            alarm_id = "alarm-1" if enabled else "alarm-2"
+            return httpx.Response(
+                200,
+                json={
+                    "settings": {
+                        "routines": [],
+                        "oneOffAlarms": [
+                            {
+                                "alarmId": alarm_id,
+                                "time": "07:15:00",
+                                "enabled": enabled,
+                                "settings": {
+                                    "vibration": {"enabled": False},
+                                    "thermal": {"enabled": True, "level": 40},
+                                },
+                                "dismissedUntil": "1970-01-01T00:00:00Z",
+                                "snoozedUntil": "1970-01-01T00:00:00Z",
+                            }
+                        ],
+                    },
+                    "state": {"nextAlarm": {}},
+                },
+            )
+        if request.url.path == "/v2/users/uid-123/routines" and request.method == "PUT":
+            payload = json.loads(request.content.decode())
+            enabled = payload["oneOffAlarms"][0]["enabled"]
+            return httpx.Response(204)
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    client = EightSleepClient(
+        StoredConfig(
+            email="user@example.com",
+            password="secret",
+            user_id="uid-123",
+            token="token",
+            token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    alarm = client.set_alarm_enabled(SetAlarmEnabledRequest(selector="07:15", enabled=False))
+
+    assert alarm.id == "alarm-2"
+    assert alarm.enabled is False
+    assert len(alarm.fingerprint) == 16

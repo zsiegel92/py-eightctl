@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -46,11 +48,6 @@ class StoredConfig(Model):
     user_id: str | None = None
     token: str | None = None
     token_expires_at: datetime | None = None
-    client_id: str = DEFAULT_CLIENT_ID
-    client_secret: str = DEFAULT_CLIENT_SECRET
-    base_url: str = DEFAULT_BASE_URL
-    app_base_url: str = APP_BASE_URL
-    auth_url: str = AUTH_URL
 
     @computed_field
     @property
@@ -79,28 +76,8 @@ class TokenAuthResponse(Model):
     user_id: str | None = Field(default=None, alias="userId")
 
 
-class LegacyLoginRequest(Model):
-    email: str
-    password: str
-
-
-class LegacySession(Model):
-    user_id: str | None = Field(default=None, alias="userId")
-    token: str
-    expiration_date: str | None = Field(default=None, alias="expirationDate")
-
-
-class LegacyLoginResponse(Model):
-    session: LegacySession
-
-
-class CurrentDevice(Model):
-    id: str | None = None
-
-
 class UserProfile(Model):
     user_id: str = Field(alias="userId")
-    current_device: CurrentDevice | None = Field(default=None, alias="currentDevice")
 
 
 class UserProfileResponse(Model):
@@ -170,12 +147,31 @@ class Alarm(Model):
     time: str
     days_of_week: list[int] = Field(default_factory=list)
     vibration: bool
+    thermal_enabled: bool = False
+    thermal_level: int | None = None
     next: bool = False
     state: AlarmState
     dismissed_until: str = ""
     snoozed_until: str = ""
     one_off: bool = False
     stale: bool = False
+
+    @computed_field
+    @property
+    def fingerprint(self) -> str:
+        material = json.dumps(
+            {
+                "days_of_week": self.days_of_week,
+                "one_off": self.one_off,
+                "thermal_enabled": self.thermal_enabled,
+                "thermal_level": self.thermal_level,
+                "time": self.time,
+                "vibration": self.vibration,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.blake2s(material.encode("utf-8"), digest_size=8).hexdigest()
 
 
 class AlarmList(Model):

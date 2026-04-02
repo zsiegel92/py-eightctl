@@ -78,8 +78,10 @@ def _print_model(ctx: typer.Context, model: RenderableModel) -> None:
         return
 
     if isinstance(model, Alarm):
+        selector = "next" if model.next else model.fingerprint
         typer.echo(
-            f"{model.id} {model.time} enabled={str(model.enabled).lower()} "
+            f"selector={selector} id={model.id} time={model.time} "
+            f"enabled={str(model.enabled).lower()} "
             f"state={model.state} next={str(model.next).lower()} "
             f"one_off={str(model.one_off).lower()}"
         )
@@ -91,11 +93,11 @@ def _print_alarm_list(alarm_list: AlarmList) -> None:
         typer.echo("no alarms")
         return
 
-    typer.echo("state    time      type      selector")
+    typer.echo("state    time      type      selector         id")
     for alarm in alarm_list.alarms:
         alarm_type = "one-off" if alarm.one_off else "routine"
-        selector = "next" if alarm.next else alarm.id
-        typer.echo(f"{alarm.state:<8} {alarm.time:<9} {alarm_type:<9} {selector}")
+        selector = "next" if alarm.next else alarm.fingerprint
+        typer.echo(f"{alarm.state:<8} {alarm.time:<9} {alarm_type:<9} {selector:<16} {alarm.id}")
 
 
 def _handle_error(error: EightSleepError) -> None:
@@ -220,7 +222,9 @@ def alarm_enable(
     ctx: typer.Context,
     selector: Annotated[
         str,
-        typer.Argument(help="Alarm selector: next, exact HH:MM[:SS], or a full alarm id."),
+        typer.Argument(
+            help="Alarm selector: next, exact HH:MM[:SS], stable fingerprint, or full alarm id."
+        ),
     ],
 ) -> None:
     """Enable an alarm."""
@@ -240,7 +244,9 @@ def alarm_disable(
     ctx: typer.Context,
     selector: Annotated[
         str,
-        typer.Argument(help="Alarm selector: next, exact HH:MM[:SS], or a full alarm id."),
+        typer.Argument(
+            help="Alarm selector: next, exact HH:MM[:SS], stable fingerprint, or full alarm id."
+        ),
     ],
 ) -> None:
     """Disable an alarm."""
