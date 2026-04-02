@@ -7,7 +7,6 @@ from py_eightctl.eightsleep.config import (
     DEFAULT_CONFIG_PATH,
     EMAIL_ENV_VAR,
     PASSWORD_ENV_VAR,
-    USERNAME_ENV_VAR,
     ConfigStore,
     resolve_config_path,
 )
@@ -48,16 +47,6 @@ def test_load_uses_email_and_password_env_vars(monkeypatch, tmp_path: Path) -> N
 
     assert config.email == "env@example.com"
     assert config.password == "env-password"
-
-
-def test_load_uses_username_env_var_as_email(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.delenv(EMAIL_ENV_VAR, raising=False)
-    monkeypatch.setenv(USERNAME_ENV_VAR, "username@example.com")
-
-    store = ConfigStore(config_path=tmp_path / "config.json")
-    config = store.load(EmptyRequest())
-
-    assert config.email == "username@example.com"
 
 
 def test_env_creds_override_stored_creds(monkeypatch, tmp_path: Path) -> None:

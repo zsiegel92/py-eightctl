@@ -10,7 +10,6 @@ from py_eightctl.eightsleep.models import EmptyRequest, StoredConfig
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "py-eightctl" / "config.json"
 CONFIG_PATH_ENV_VAR = "PY_EIGHTCTL_CONFIG_PATH"
 EMAIL_ENV_VAR = "PY_EIGHTCTL_EMAIL"
-USERNAME_ENV_VAR = "PY_EIGHTCTL_USERNAME"
 PASSWORD_ENV_VAR = "PY_EIGHTCTL_PASSWORD"
 
 
@@ -31,7 +30,7 @@ def _get_env_value(name: str) -> str | None:
 
 
 def apply_env_overrides(config: StoredConfig) -> StoredConfig:
-    email = _get_env_value(EMAIL_ENV_VAR) or _get_env_value(USERNAME_ENV_VAR)
+    email = _get_env_value(EMAIL_ENV_VAR)
     password = _get_env_value(PASSWORD_ENV_VAR)
 
     updates: dict[str, str] = {}
