@@ -41,6 +41,7 @@ from py_eightctl.eightsleep.models import (
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 JsonMapping = Mapping[str, object]
+ALARM_CLEARED_TIMESTAMP = "1970-01-01T00:00:00Z"
 
 
 class EightSleepClient:
@@ -140,8 +141,11 @@ class EightSleepClient:
                 raise ResponseError("one-off alarm match missing index")
             entry = payload.settings.one_off_alarms[match.one_off_index]
             entry.enabled = request.enabled
-            if request.enabled and not entry.enabled_since:
+            if request.enabled:
                 entry.enabled_since = datetime.now(UTC).isoformat()
+                self._clear_alarm_delivery_state(entry)
+            else:
+                entry.enabled_since = None
             body = {
                 "oneOffAlarms": [
                     alarm.model_dump(mode="json", by_alias=True)
@@ -433,10 +437,19 @@ class EightSleepClient:
         one_off: bool,
     ) -> Alarm:
         time_value = entry.time or entry.time_with_offset.time
-        enabled = entry.enabled if one_off else not entry.disabled_individually
         dismissed_until = self._normalize_alarm_timestamp(entry.dismissed_until)
         snoozed_until = self._normalize_alarm_timestamp(entry.snoozed_until)
         next_alarm = entry.alarm_id == next_alarm_id
+        enabled = (
+            self._one_off_alarm_is_enabled(
+                entry=entry,
+                next_alarm_id=next_alarm_id,
+                dismissed_until=dismissed_until,
+                snoozed_until=snoozed_until,
+            )
+            if one_off
+            else not entry.disabled_individually
+        )
 
         alarm = Alarm(
             id=entry.alarm_id,
@@ -584,6 +597,20 @@ class EightSleepClient:
             if parsed is not None and parsed <= now:
                 return True
         return False
+
+    def _one_off_alarm_is_enabled(
+        self,
+        *,
+        entry: RoutineAlarmEntry,
+        next_alarm_id: str | None,
+        dismissed_until: str,
+        snoozed_until: str,
+    ) -> bool:
+        return bool(entry.enabled and next_alarm_id and not dismissed_until and not snoozed_until)
+
+    def _clear_alarm_delivery_state(self, entry: RoutineAlarmEntry) -> None:
+        entry.dismissed_until = ALARM_CLEARED_TIMESTAMP
+        entry.snoozed_until = ALARM_CLEARED_TIMESTAMP
 
     def _alarm_order_weight(self, alarm: Alarm) -> int:
         if alarm.state == AlarmState.NEXT:
