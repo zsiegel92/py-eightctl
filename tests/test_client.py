@@ -303,8 +303,8 @@ def test_list_alarms_interprets_one_off_alarm_state() -> None:
 
     assert [(alarm.id, alarm.enabled, alarm.state) for alarm in alarms.alarms] == [
         ("next", True, "next"),
-        ("later", True, "enabled"),
         ("dismissed", False, "disabled"),
+        ("later", True, "enabled"),
         ("off", False, "disabled"),
     ]
 

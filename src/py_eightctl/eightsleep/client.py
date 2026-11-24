@@ -425,7 +425,7 @@ class EightSleepClient:
 
         return sorted(
             alarms,
-            key=lambda alarm: (self._alarm_order_weight(alarm), alarm.time, alarm.id),
+            key=lambda alarm: (alarm.time, alarm.id),
         )
 
     def _build_alarm(
@@ -611,17 +611,6 @@ class EightSleepClient:
     def _clear_alarm_delivery_state(self, entry: RoutineAlarmEntry) -> None:
         entry.dismissed_until = ALARM_CLEARED_TIMESTAMP
         entry.snoozed_until = ALARM_CLEARED_TIMESTAMP
-
-    def _alarm_order_weight(self, alarm: Alarm) -> int:
-        if alarm.state == AlarmState.NEXT:
-            return 0
-        if alarm.state in {AlarmState.ENABLED, AlarmState.SNOOZED}:
-            return 1
-        if alarm.state == AlarmState.DISABLED:
-            return 2
-        if alarm.state == AlarmState.DISMISSED:
-            return 3
-        return 4
 
     def _normalize_alarm_time(self, value: str) -> str | None:
         trimmed = value.strip()
