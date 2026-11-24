@@ -66,6 +66,11 @@ class EightSleepService:
     def set_current_temperature(self, request: SetCurrentTemperatureRequest) -> PodStatus:
         return self._run(lambda client: client.set_current_temperature(request))
 
+    def set_scheduled_bedtime(
+        self, request: SetCurrentTemperatureRequest
+    ) -> SmartTemperatureStatus:
+        return self._run(lambda client: client.set_scheduled_bedtime(request))
+
     def get_smart_temperature_status(self, request: EmptyRequest) -> SmartTemperatureStatus:
         return self._run(lambda client: client.get_smart_temperature_status(request))
 
