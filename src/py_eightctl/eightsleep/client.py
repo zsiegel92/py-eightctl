@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import TypeVar, overload
+from typing import Any, TypeVar, overload
 from urllib.parse import urljoin
 
 import httpx
@@ -164,44 +164,41 @@ class EightSleepClient:
         return status.model_copy(update={"smart": smart})
 
     def list_alarms(self, _: EmptyRequest) -> AlarmList:
-        payload = self._fetch_routines_payload()
+        payload = RoutinesPayload.model_validate(self._fetch_routines_payload())
         return AlarmList(alarms=self._alarms_from_payload(payload))
 
     def set_alarm_enabled(self, request: SetAlarmEnabledRequest) -> Alarm:
-        payload = self._fetch_routines_payload()
-        match = self._resolve_alarm_selector(payload, request.selector)
-
+        raw_payload = self._fetch_routines_payload()
+        match = self._resolve_alarm_selector(
+            RoutinesPayload.model_validate(raw_payload), request.selector
+        )
+        # This endpoint replaces the collection. Keep the server's field presence
+        # and values for every record except the one we're editing.
+        settings = raw_payload["settings"]
         if match.one_off:
             if match.one_off_index is None:
                 raise ResponseError("one-off alarm match missing index")
-            entry = payload.settings.one_off_alarms[match.one_off_index]
-            entry.enabled = request.enabled
+            alarms = settings["oneOffAlarms"]
+            entry = alarms[match.one_off_index]
+            entry["enabled"] = request.enabled
             if request.enabled:
-                entry.enabled_since = datetime.now(UTC).isoformat()
-                self._clear_alarm_delivery_state(entry)
+                entry["enabledSince"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+                entry["dismissedUntil"] = ALARM_CLEARED_TIMESTAMP
+                entry["snoozedUntil"] = ALARM_CLEARED_TIMESTAMP
             else:
-                entry.enabled_since = None
-            body = {
-                "oneOffAlarms": [
-                    alarm.model_dump(mode="json", by_alias=True)
-                    for alarm in payload.settings.one_off_alarms
-                ]
-            }
+                entry.pop("enabledSince", None)
+            body = {"oneOffAlarms": alarms}
         else:
             if match.routine_index is None or match.routine_alarm_index is None:
                 raise ResponseError("routine alarm match missing indices")
-            group = payload.settings.routines[match.routine_index]
-            alarms = group.override.alarms if match.routine_override else group.alarms
+            routines = settings["routines"]
+            group = routines[match.routine_index]
+            alarms = group["override"]["alarms"] if match.routine_override else group["alarms"]
             entry = alarms[match.routine_alarm_index]
-            entry.disabled_individually = not request.enabled
-            if request.enabled and not entry.enabled_since:
-                entry.enabled_since = datetime.now(UTC).isoformat()
-            body = {
-                "routines": [
-                    routine.model_dump(mode="json", by_alias=True)
-                    for routine in payload.settings.routines
-                ]
-            }
+            entry["disabledIndividually"] = not request.enabled
+            if request.enabled and not entry.get("enabledSince"):
+                entry["enabledSince"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            body = {"routines": routines}
 
         user_id = self._require_user_id()
         self._request(
@@ -213,26 +210,16 @@ class EightSleepClient:
         )
 
         updated = self.list_alarms(EmptyRequest())
-        for alarm in updated.alarms:
-            if alarm.id == match.alarm.id:
-                return alarm
-
-        fingerprint_matches = [
-            alarm for alarm in updated.alarms if alarm.fingerprint == match.alarm.fingerprint
-        ]
-        if len(fingerprint_matches) == 1:
-            return fingerprint_matches[0]
-
-        enabled_matches = [
-            alarm for alarm in fingerprint_matches if alarm.enabled == request.enabled
-        ]
-        if len(enabled_matches) == 1:
-            return enabled_matches[0]
-
-        raise ResponseError(
-            f"updated alarm {match.alarm.id}, but could not refetch it via "
-            f"fingerprint {match.alarm.fingerprint}"
-        )
+        matches = [alarm for alarm in updated.alarms if alarm.id == match.alarm.id]
+        if not matches:
+            matches = [
+                alarm for alarm in updated.alarms if alarm.fingerprint == match.alarm.fingerprint
+            ]
+        if len(matches) != 1:
+            raise ResponseError(f"could not identify updated alarm {match.alarm.id}")
+        if matches[0].enabled != request.enabled:
+            raise ResponseError(f"alarm {match.alarm.id} did not reach the requested enabled state")
+        return matches[0]
 
     def alarm_vibration_test(self, _: EmptyRequest) -> ActionResult:
         user_id = self._require_user_id()
@@ -244,14 +231,9 @@ class EightSleepClient:
         )
         return ActionResult(message="alarm vibration test triggered")
 
-    def _fetch_routines_payload(self) -> RoutinesPayload:
+    def _fetch_routines_payload(self) -> dict[str, Any]:
         user_id = self._require_user_id()
-        return self._request_model(
-            "GET",
-            f"/v2/users/{user_id}/routines",
-            response_model=RoutinesPayload,
-            use_app_base_url=True,
-        )
+        return self._request("GET", f"/v2/users/{user_id}/routines", use_app_base_url=True).json()
 
     def _require_user_id(self) -> str:
         if self.config.user_id:
@@ -518,13 +500,15 @@ class EightSleepClient:
                     return candidate
             raise ResponseError(f"next alarm {next_alarm_id} not found")
 
-        for candidate in candidates:
-            if candidate.alarm.id == selector:
-                return candidate
-
-        for candidate in candidates:
-            if candidate.alarm.fingerprint == selector:
-                return candidate
+        exact_matches = [candidate for candidate in candidates if candidate.alarm.id == selector]
+        if not exact_matches:
+            exact_matches = [
+                candidate for candidate in candidates if candidate.alarm.fingerprint == selector
+            ]
+        if len(exact_matches) == 1:
+            return exact_matches[0]
+        if len(exact_matches) > 1:
+            raise ResponseError(f"selector {selector!r} matched multiple alarms")
 
         normalized_selector = self._normalize_alarm_time(selector)
         if normalized_selector is None:
@@ -642,10 +626,6 @@ class EightSleepClient:
         snoozed_until: str,
     ) -> bool:
         return bool(entry.enabled and next_alarm_id and not dismissed_until and not snoozed_until)
-
-    def _clear_alarm_delivery_state(self, entry: RoutineAlarmEntry) -> None:
-        entry.dismissed_until = ALARM_CLEARED_TIMESTAMP
-        entry.snoozed_until = ALARM_CLEARED_TIMESTAMP
 
     def _normalize_alarm_time(self, value: str) -> str | None:
         trimmed = value.strip()

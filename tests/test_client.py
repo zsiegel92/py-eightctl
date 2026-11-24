@@ -496,3 +496,65 @@ def test_set_scheduled_bedtime_rejects_incomplete_schedule() -> None:
 
     with pytest.raises(ResponseError, match="cannot safely"):
         _client_with_handler(handler).set_scheduled_bedtime(SetCurrentTemperatureRequest(level=-10))
+
+
+def test_one_off_alarm_toggle_round_trip_preserves_other_records() -> None:
+    target = _one_off_alarm("target", "04:30:00", enabled=False)
+    other_off = _one_off_alarm("off", "03:30:00", enabled=False)
+    other_off["settings"]["futureOption"] = {"mode": "preserve"}
+    other_on = _one_off_alarm("on", "08:00:00", enabled=True)
+    dismissed = _one_off_alarm(
+        "dismissed", "09:00:00", enabled=True, dismissed_until="2026-09-17T13:00:00Z"
+    )
+    alarms = [target, other_off, other_on, dismissed]
+    writes = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal writes
+        assert request.url.path == "/v2/users/uid-123/routines"
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "settings": {"oneOffAlarms": alarms},
+                    "state": {"nextAlarm": {"alarmId": other_on["alarmId"]}},
+                },
+            )
+        assert request.method == "PUT"
+        submitted = json.loads(request.content)
+        assert submitted.keys() == {"oneOffAlarms"}
+        updated_target, *other_alarms = submitted["oneOffAlarms"]
+        assert other_alarms == alarms[1:]
+        expected = {**alarms[0], "enabled": writes == 0}
+        if writes == 0:
+            assert datetime.fromisoformat(updated_target["enabledSince"]).tzinfo == UTC
+            expected["enabledSince"] = updated_target["enabledSince"]
+        else:
+            expected.pop("enabledSince")
+        assert updated_target == expected
+        writes += 1
+        # The real API can reissue IDs even for entries whose settings are identical.
+        alarms[:] = [
+            {**alarm, "alarmId": f"{writes}-{index}"}
+            for index, alarm in enumerate(submitted["oneOffAlarms"])
+        ]
+        return httpx.Response(204)
+
+    client = _client_with_handler(handler)
+
+    def enabled_by_time() -> dict[str, bool]:
+        return {alarm.time: alarm.enabled for alarm in client.list_alarms(EmptyRequest()).alarms}
+
+    before = enabled_by_time()
+    assert before == {"03:30:00": False, "04:30:00": False, "08:00:00": True, "09:00:00": False}
+
+    enabled = client.set_alarm_enabled(SetAlarmEnabledRequest(selector="target", enabled=True))
+    assert enabled.id != "target"
+    assert enabled_by_time() == {**before, "04:30:00": True}
+    client.set_alarm_enabled(SetAlarmEnabledRequest(selector=enabled.id, enabled=False))
+    assert enabled_by_time() == before
+    assert writes == 2
+
+    # A new GET must also pick up an edit from outside this client.
+    alarms[1]["enabled"] = True
+    assert enabled_by_time() == {**before, "03:30:00": True}
