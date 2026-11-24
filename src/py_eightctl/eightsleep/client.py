@@ -94,6 +94,41 @@ class EightSleepClient:
             use_app_base_url=True,
         )
 
+    def set_scheduled_bedtime(
+        self, request: SetCurrentTemperatureRequest
+    ) -> SmartTemperatureStatus:
+        user_id = self._require_user_id()
+        data = self._request(
+            "GET", f"/v1/users/{user_id}/temperature", use_app_base_url=True
+        ).json()
+        schedule = data.get("currentSchedule")
+        next_schedule = data.get("nextSchedule")
+        days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+        if (
+            not isinstance(schedule, dict)
+            or not isinstance(next_schedule, dict)
+            or not schedule.get("id")
+            or schedule.get("id") != next_schedule.get("id")
+            or set(schedule.get("days", [])) != days
+            or not isinstance(schedule.get("startSettings"), dict)
+            or "bedtime" not in schedule["startSettings"]
+            or not isinstance(data.get("smart"), dict)
+            or not data.get("scheduleType")
+        ):
+            raise ResponseError("cannot safely update this bedtime schedule")
+        schedule["startSettings"]["bedtime"] = request.level
+        self._request(
+            "PUT",
+            f"/v1/users/{user_id}/bedtime",
+            body={
+                "scheduleType": data["scheduleType"],
+                "smart": data["smart"],
+                "schedules": [schedule],
+            },
+            use_app_base_url=True,
+        )
+        return self.get_smart_temperature_status(EmptyRequest())
+
     def set_smart_temperature(self, request: SetSmartTemperatureRequest) -> SmartTemperatureStatus:
         user_id = self._require_user_id()
         status = self.get_smart_temperature_status(EmptyRequest())

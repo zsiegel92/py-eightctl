@@ -130,7 +130,16 @@ class SmartTemperatureSettings(Model):
     dawn: int = Field(alias="finalSleepLevel")
 
 
+class ScheduleStartSettings(Model):
+    bedtime: int | None = None
+
+
+class TemperatureSchedule(Model):
+    start_settings: ScheduleStartSettings = Field(alias="startSettings")
+
+
 class SmartTemperatureStatus(PodStatus):
+    current_schedule: TemperatureSchedule | None = Field(default=None, alias="currentSchedule")
     smart: SmartTemperatureSettings | None = None
 
 

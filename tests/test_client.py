@@ -437,3 +437,62 @@ def test_list_alarms_marks_vibration_test_alarm() -> None:
     assert len(alarms.alarms) == 1
     assert alarms.alarms[0].is_vibration_test is True
     assert alarms.alarms[0].vibration_pattern == "TESTDRIVE"
+
+
+def test_set_scheduled_bedtime_preserves_schedule_and_smart_settings() -> None:
+    from py_eightctl.eightsleep.models import SetCurrentTemperatureRequest
+
+    schedule = {
+        "id": "schedule-1",
+        "enabled": True,
+        "time": "22:00:00",
+        "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+        "startSettings": {"bedtime": -20, "pillowBedtime": 9, "elevationPreset": "sleep"},
+        "tags": [],
+    }
+    smart = {"bedTimeLevel": -37, "initialSleepLevel": -31, "finalSleepLevel": -26}
+    payload = {
+        "currentLevel": -20,
+        "currentState": {"type": "smart:bedtime"},
+        "smart": smart,
+        "currentSchedule": schedule,
+        "nextSchedule": schedule,
+        "scheduleType": "smart",
+    }
+    writes: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            assert request.url.path == "/v1/users/uid-123/bedtime"
+            writes.append(json.loads(request.content))
+            return httpx.Response(200)
+        return httpx.Response(200, json=payload)
+
+    client = _client_with_handler(handler)
+    client.set_scheduled_bedtime(SetCurrentTemperatureRequest(level=-10))
+    assert writes == [
+        {
+            "scheduleType": "smart",
+            "smart": smart,
+            "schedules": [
+                {**schedule, "startSettings": {**schedule["startSettings"], "bedtime": -10}}
+            ],
+        }
+    ]
+
+
+def test_set_scheduled_bedtime_rejects_incomplete_schedule() -> None:
+    import pytest
+
+    from py_eightctl.eightsleep.errors import ResponseError
+    from py_eightctl.eightsleep.models import SetCurrentTemperatureRequest
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        return httpx.Response(
+            200,
+            json={"currentSchedule": {"id": "a", "days": ["monday"]}, "nextSchedule": {"id": "b"}},
+        )
+
+    with pytest.raises(ResponseError, match="cannot safely"):
+        _client_with_handler(handler).set_scheduled_bedtime(SetCurrentTemperatureRequest(level=-10))
